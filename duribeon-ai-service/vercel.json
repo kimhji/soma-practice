@@ -1,5 +1,0 @@
-{
-  "buildCommand": "npm --workspace apps/frontend run build",
-  "outputDirectory": "apps/frontend/dist",
-  "installCommand": "npm install"
-}
