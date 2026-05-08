@@ -1,5 +1,6 @@
 import { createApp } from './app.js';
 import { config } from './config.js';
-import { logger } from './logger.js';
 
-createApp().listen(config.PORT, () => logger.info({ port: config.PORT }, 'backend started'));
+createApp().listen(config.PORT, config.HOST, () => {
+  console.log(`Duribeon backend started: http://${config.HOST}:${config.PORT}`);
+});

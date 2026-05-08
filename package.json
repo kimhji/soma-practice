@@ -1,12 +1,17 @@
 {
-  "name": "duribeon-fullstack-upstage",
+  "name": "duribeon-game",
+  "version": "0.2.0",
   "private": true,
-  "workspaces": ["apps/backend", "apps/frontend"],
+  "workspaces": [
+    "apps/backend",
+    "apps/frontend"
+  ],
   "scripts": {
     "dev:backend": "npm --workspace apps/backend run dev",
     "dev:frontend": "npm --workspace apps/frontend run dev",
-    "build": "npm --workspaces run build",
-    "test": "npm --workspaces run test",
-    "lint": "npm --workspaces run lint"
-  }
+    "build:backend": "npm --workspace apps/backend run build",
+    "build:frontend": "npm --workspace apps/frontend run build",
+    "build": "npm run build:backend && npm run build:frontend"
+  },
+  "devDependencies": {}
 }

@@ -1,25 +1,39 @@
-import type { MissionCard as MissionCardType } from '../types/domain';
+import type { Mission } from '../types';
 
-export function MissionCard(props: { card: MissionCardType; selected: boolean; onSelect: () => void; onReject: () => void }) {
-  const { card, selected, onSelect, onReject } = props;
+type Props = {
+  mission: Mission;
+  index: number;
+  onSelect: () => void;
+  onRegenerate: () => void;
+  disabled?: boolean;
+};
+
+export function MissionCard({ mission, index, onSelect, onRegenerate, disabled }: Props) {
   return (
-    <article className={`card ${selected ? 'selected' : ''}`}>
-      <div className="card-top">
-        <span>{categoryLabel(card.category)}</span>
-        <span>{card.estimatedMinutes}분 · {card.difficulty}</span>
+    <article className="mission-card">
+      <div className="card-image-wrap">
+        <img src={mission.place.imageUrl} alt={mission.place.nameKo} className="card-image" />
+        <span className="quest-no">QUEST {index + 1}</span>
       </div>
-      <h3>{card.title}</h3>
-      <p className="hook">{card.hook}</p>
-      <div className="meta"><b>동선</b><p>{card.route}</p></div>
-      <div className="meta"><b>인증</b><p>{card.proof}</p></div>
-      <div className="actions">
-        <button onClick={onSelect}>{selected ? '선택됨' : '이거 할래'}</button>
-        <button className="ghost" onClick={onReject}>이 카드만 빼기</button>
+      <div className="card-body">
+        <div className="card-meta">
+          <span>{mission.category}</span>
+          <span>{mission.duration}</span>
+          <span>{mission.difficulty}</span>
+        </div>
+        <h3>{mission.title}</h3>
+        <p className="hook">{mission.hook}</p>
+        <p><b>장소</b> {mission.place.nameKo}</p>
+        <p><b>동선</b> {mission.route}</p>
+        <p><b>인증</b> {mission.proof}</p>
+        <div className="tag-row">
+          {mission.place.tags.map((tag) => <span key={tag}>#{tag}</span>)}
+        </div>
+        <div className="button-row">
+          <button className="pixel-btn primary" onClick={onSelect}>선택</button>
+          <button className="pixel-btn" onClick={onRegenerate} disabled={disabled}>이것만 재생성</button>
+        </div>
       </div>
     </article>
   );
-}
-
-function categoryLabel(category: MissionCardType['category']) {
-  return { food: '음식', place_discovery: '장소 발견', experience: '체험' }[category];
 }

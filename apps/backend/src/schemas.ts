@@ -1,43 +1,51 @@
 import { z } from 'zod';
 
-export const SupportedAreaSchema = z.enum(['ikseon', 'seongsu', 'yeonnam']);
-export type SupportedArea = z.infer<typeof SupportedAreaSchema>;
-export const LanguageSchema = z.enum(['ko', 'en']);
-export type Language = z.infer<typeof LanguageSchema>;
+export const AreaSchema = z.enum(['ikseon', 'seongsu', 'yeonnam']);
+export type Area = z.infer<typeof AreaSchema>;
 
-export const MissionCategorySchema = z.enum(['food', 'place_discovery', 'experience']);
-export type MissionCategory = z.infer<typeof MissionCategorySchema>;
-
-export const PipelineRequestSchema = z.object({
-  rawText: z.string().min(2).max(1000),
-  area: SupportedAreaSchema.optional(),
-  group: z.string().max(80).optional(),
-  mood: z.string().max(120).optional(),
-  avoid: z.string().max(200).optional(),
-  rejectedPlaceIds: z.array(z.string()).default([]),
-  rejectedMissionIds: z.array(z.string()).default([]),
-  replaceMissionId: z.string().optional()
+export const GenerateMissionRequestSchema = z.object({
+  area: AreaSchema,
+  group: z.string().min(1),
+  mood: z.string().default('로컬, 색다른, 가벼운 모험'),
+  avoid: z.string().default(''),
+  language: z.enum(['ko', 'en']).default('ko'),
+  excludePlaceIds: z.array(z.string()).default([]),
 });
-export type PipelineRequest = z.infer<typeof PipelineRequestSchema>;
 
-export const MissionCardSchema = z.object({
-  id: z.string().min(3),
-  placeId: z.string().min(3),
-  category: MissionCategorySchema,
-  title: z.string().min(2).max(80),
-  hook: z.string().min(2).max(180),
-  route: z.string().min(2).max(220),
-  proof: z.string().min(2).max(160),
-  estimatedMinutes: z.number().int().min(5).max(180),
-  difficulty: z.enum(['easy', 'normal', 'hard']).default('normal')
+export const RegenerateOneRequestSchema = GenerateMissionRequestSchema.extend({
+  currentMissions: z.array(z.object({ placeId: z.string() })).default([]),
+  replaceIndex: z.number().int().min(0).max(4),
 });
-export type MissionCard = z.infer<typeof MissionCardSchema>;
 
-export const MissionCardsSchema = z.array(MissionCardSchema).min(1).max(5);
+export const MissionSchema = z.object({
+  id: z.string(),
+  placeId: z.string(),
+  title: z.string(),
+  hook: z.string(),
+  route: z.string(),
+  proof: z.string(),
+  duration: z.string(),
+  category: z.string(),
+  difficulty: z.enum(['easy', 'normal', 'hard']).default('normal'),
+  npcLine: z.string(),
+  place: z.object({
+    nameKo: z.string(),
+    nameEn: z.string(),
+    area: AreaSchema,
+    address: z.string(),
+    imageUrl: z.string(),
+    mapUrl: z.string(),
+    tags: z.array(z.string()),
+  }),
+});
+
+export type Mission = z.infer<typeof MissionSchema>;
+export const MissionListSchema = z.array(MissionSchema).length(5);
 
 export const VerifyResponseSchema = z.object({
   ok: z.boolean(),
-  reason: z.string().min(1).max(160),
-  comment: z.string().min(1).max(180)
+  reason: z.string(),
+  comment: z.string(),
+  confidence: z.number().min(0).max(1).default(0.5),
 });
 export type VerifyResponse = z.infer<typeof VerifyResponseSchema>;
