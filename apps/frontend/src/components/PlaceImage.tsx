@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from 'react';
 
 type Props = {
   src?: string;
@@ -6,25 +6,26 @@ type Props = {
   className?: string;
 };
 
-export function PlaceImage({ src, alt, className }: Props) {
-  const [failed, setFailed] = useState(false);
+const FALLBACKS = Array.from({ length: 30 }, (_, index) => {
+  const n = String(index + 1).padStart(2, '0');
+  return `/assets/quests/fallback/fallback-${n}.png`;
+});
 
-  if (!src || failed) {
-    return (
-      <div className={`place-image-fallback ${className ?? ""}`}>
-        <span>NO IMAGE</span>
-      </div>
-    );
-  }
+export function PlaceImage({ src, alt, className }: Props) {
+  const fallback = useMemo(() => FALLBACKS[Math.floor(Math.random() * FALLBACKS.length)], []);
+  const [currentSrc, setCurrentSrc] = useState(src || fallback);
+
+  useEffect(() => {
+    setCurrentSrc(src || fallback);
+  }, [src, fallback]);
 
   return (
     <img
-      src={src}
+      src={currentSrc || fallback}
       alt={alt}
       className={className}
       loading="lazy"
-      referrerPolicy="no-referrer"
-      onError={() => setFailed(true)}
+      onError={() => setCurrentSrc(fallback)}
     />
   );
 }

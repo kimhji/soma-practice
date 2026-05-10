@@ -12,6 +12,7 @@ import {
 import { pickPlaces } from './curation.js';
 import { callUpstageChat } from './upstage.js';
 import { extractJson, normalizeArray } from '../utils/json.js';
+import { pickQuestImages } from './asset-pool.js';
 
 const patternLabelKo: Record<MissionPattern, string> = {
   signboard: '간판 찾기',
@@ -62,26 +63,39 @@ function pickPattern(place: Place, usedPatterns: Set<MissionPattern>): MissionPa
   return place.missionPatterns.find((pattern) => !usedPatterns.has(pattern)) ?? place.missionPatterns[0] ?? 'hidden_detail';
 }
 
-function placePayload(place: Place) {
+function placePayload(place: Place, usedAssetUrls: Set<string>) {
+  const imageUrls = pickQuestImages({
+    area: place.area,
+    category: place.category,
+    count: 5,
+    avoid: usedAssetUrls,
+  });
+
   return {
     nameKo: place.nameKo,
     nameEn: place.nameEn,
     area: place.area,
     address: place.address,
-    imageUrl: place.imageUrl,
-    imageUrls: place.imageUrls.length ? place.imageUrls : [place.imageUrl],
+    imageUrl: imageUrls[0],
+    imageUrls,
     mapUrl: place.mapUrl,
     tags: place.tags,
     verificationHints: place.verificationHints,
   };
 }
 
-function buildFallbackMission(place: Place, index: number, language: Language, usedPatterns = new Set<MissionPattern>()): Mission {
+function buildFallbackMission(
+  place: Place,
+  index: number,
+  language: Language,
+  usedPatterns = new Set<MissionPattern>(),
+  usedAssetUrls = new Set<string>(),
+): Mission {
   const pattern = pickPattern(place, usedPatterns);
   usedPatterns.add(pattern);
   const hint = place.verificationHints[index % place.verificationHints.length] ?? place.tags[0] ?? '장소 단서';
 
-  return {
+  return MissionSchema.parse({
     id: randomUUID(),
     placeId: place.id,
     title:
@@ -105,31 +119,46 @@ function buildFallbackMission(place: Place, index: number, language: Language, u
       language === 'ko'
         ? `자, 이번 단서는 '${hint}'다. 그냥 보면 지나친다. 두리번거려!`
         : `Your clue is '${hint}'. Don't just look — duribeon around!`,
-    place: placePayload(place),
-  };
+    place: placePayload(place, usedAssetUrls),
+  });
 }
 
-function attachPlace(raw: any, place: Place, language: Language, index: number, usedPatterns: Set<MissionPattern>): Mission {
-  const requestedPattern = raw.missionPattern as MissionPattern | undefined;
+function attachPlace(
+  raw: any,
+  place: Place,
+  language: Language,
+  index: number,
+  usedPatterns: Set<MissionPattern>,
+  usedAssetUrls: Set<string>,
+): Mission {
+  const requestedPattern = raw?.missionPattern as MissionPattern | undefined;
   const pattern = requestedPattern && place.missionPatterns.includes(requestedPattern) && !usedPatterns.has(requestedPattern)
     ? requestedPattern
     : pickPattern(place, usedPatterns);
   usedPatterns.add(pattern);
 
-  const fallback = buildFallbackMission(place, index, language, usedPatterns);
+  const hint = place.verificationHints[index % place.verificationHints.length] ?? place.tags[0] ?? '장소 단서';
+  const fallbackTitle = language === 'ko' ? `${patternLabelKo[pattern]}: ${place.nameKo}` : `${patternLabelEn[pattern]} at ${place.nameEn}`;
+  const fallbackHook = language === 'ko'
+    ? `${place.storyKo}. 오늘은 '${hint}' 단서를 잡아오는 퀘스트야.`
+    : `${place.storyEn} Your clue is '${hint}'. Bring it back like a quest item.`;
+  const fallbackRoute = language === 'ko'
+    ? `${place.nameKo} 근처를 천천히 한 바퀴 돌면서 ${hint} 단서를 찾아봐.`
+    : `Circle around ${place.nameEn} and look for the clue: ${hint}.`;
+
   return MissionSchema.parse({
-    id: raw.id || randomUUID(),
+    id: raw?.id || randomUUID(),
     placeId: place.id,
-    title: raw.title || fallback.title,
-    hook: raw.hook || fallback.hook,
-    route: raw.route || fallback.route,
-    proof: raw.proof || fallback.proof,
-    duration: raw.duration || fallback.duration,
+    title: raw?.title || fallbackTitle,
+    hook: raw?.hook || fallbackHook,
+    route: raw?.route || fallbackRoute,
+    proof: raw?.proof || (language === 'ko' ? patternProofKo[pattern] : `Complete the ${patternLabelEn[pattern]} and upload one clear proof photo.`),
+    duration: raw?.duration || `${10 + ((index * 5) % 25)}분`,
     category: place.category,
     missionPattern: pattern,
-    difficulty: raw.difficulty || fallback.difficulty,
-    npcLine: raw.npcLine || fallback.npcLine,
-    place: placePayload(place),
+    difficulty: raw?.difficulty || (index % 5 === 4 ? 'hard' : index % 2 === 0 ? 'easy' : 'normal'),
+    npcLine: raw?.npcLine || (language === 'ko' ? `자, 이번 단서는 '${hint}'다. 그냥 보면 지나친다. 두리번거려!` : `Your clue is '${hint}'. Don't just look — duribeon around!`),
+    place: placePayload(place, usedAssetUrls),
   });
 }
 
@@ -204,9 +233,16 @@ Each item schema:
 `;
 }
 
-function selectUniqueMissions(rawItems: any[], candidates: Place[], language: Language, count: number, usedPatternSeed: MissionPattern[] = []) {
+function selectUniqueMissions(
+  rawItems: any[],
+  candidates: Place[],
+  language: Language,
+  count: number,
+  usedPatternSeed: MissionPattern[] = [],
+) {
   const usedPlaceIds = new Set<string>();
   const usedPatterns = new Set<MissionPattern>(usedPatternSeed);
+  const usedAssetUrls = new Set<string>();
   const missions: Mission[] = [];
 
   for (const raw of rawItems) {
@@ -214,14 +250,14 @@ function selectUniqueMissions(rawItems: any[], candidates: Place[], language: La
     const selected = candidates.find((p) => p.id === raw?.placeId && !usedPlaceIds.has(p.id));
     if (!selected) continue;
     usedPlaceIds.add(selected.id);
-    missions.push(attachPlace(raw, selected, language, missions.length, usedPatterns));
+    missions.push(attachPlace(raw, selected, language, missions.length, usedPatterns, usedAssetUrls));
   }
 
   for (const place of candidates) {
     if (missions.length >= count) break;
     if (usedPlaceIds.has(place.id)) continue;
     usedPlaceIds.add(place.id);
-    missions.push(buildFallbackMission(place, missions.length, language, usedPatterns));
+    missions.push(buildFallbackMission(place, missions.length, language, usedPatterns, usedAssetUrls));
   }
 
   return missions;
@@ -267,7 +303,6 @@ export async function generateMissions(input: unknown): Promise<Mission[]> {
 
 export async function regenerateOne(input: unknown): Promise<Mission> {
   const parsed = RegenerateOneRequestSchema.parse(input);
-  const target = parsed.currentMissions[parsed.replaceIndex];
   const keep = parsed.currentMissions.filter((_, index) => index !== parsed.replaceIndex);
   const currentPlaceIds = parsed.currentMissions.map((m) => m.placeId);
   const currentPatterns = parsed.currentMissions.map((m) => m.missionPattern).filter(Boolean) as MissionPattern[];
@@ -283,6 +318,10 @@ export async function regenerateOne(input: unknown): Promise<Mission> {
     limit: 8,
   });
   const place = candidates[0] ?? pickPlaces({ area: parsed.area, excludePlaceIds: keep.map((m) => m.placeId), limit: 1 })[0];
+
+  if (!place) {
+    throw new Error('재생성할 장소 후보가 부족해. seed를 더 늘려줘.');
+  }
 
   try {
     const prompt = buildPrompt({
@@ -301,6 +340,6 @@ export async function regenerateOne(input: unknown): Promise<Mission> {
     return selectUniqueMissions(arr, candidates.length ? candidates : [place], parsed.language, 1, currentPatterns)[0];
   } catch (error) {
     console.warn('[mission-one] Upstage fallback:', error);
-    return buildFallbackMission(place, parsed.replaceIndex, parsed.language, new Set(currentPatterns));
+    return buildFallbackMission(place, parsed.replaceIndex, parsed.language, new Set(currentPatterns), new Set<string>());
   }
 }

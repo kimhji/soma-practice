@@ -9,7 +9,7 @@ export const config = {
     .split(',')
     .map((v) => v.trim()),
   UPSTAGE_API_KEY: process.env.UPSTAGE_API_KEY ?? '',
-  UPSTAGE_MODEL: process.env.UPSTAGE_MODEL ?? 'solar-pro2',
+  UPSTAGE_MODEL: process.env.UPSTAGE_MODEL ?? 'solar-pro3',
   OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
   OPENAI_VISION_MODEL: process.env.OPENAI_VISION_MODEL ?? 'gpt-4.1-mini',
 };

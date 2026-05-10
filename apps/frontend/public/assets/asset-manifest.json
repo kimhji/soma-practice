@@ -1,0 +1,15 @@
+{
+  "areas": [
+    "ikseon",
+    "seongsu",
+    "yeonnam"
+  ],
+  "categories": [
+    "food",
+    "discovery",
+    "activity"
+  ],
+  "countPerAreaCategory": 40,
+  "fallbackCount": 30,
+  "totalImages": 398
+}
