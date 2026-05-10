@@ -1,70 +1,135 @@
 import { randomUUID } from 'node:crypto';
 import { getAreaLabel, type Place } from '../data/places.js';
-import { GenerateMissionRequestSchema, MissionListSchema, MissionSchema, type Mission } from '../schemas.js';
+import {
+  GenerateMissionRequestSchema,
+  MissionListSchema,
+  MissionSchema,
+  RegenerateOneRequestSchema,
+  type Language,
+  type Mission,
+  type MissionPattern,
+} from '../schemas.js';
 import { pickPlaces } from './curation.js';
 import { callUpstageChat } from './upstage.js';
 import { extractJson, normalizeArray } from '../utils/json.js';
 
-function buildFallbackMission(place: Place, index: number, language: 'ko' | 'en'): Mission {
-  const titleKo = ['숨은 간판 수집가', '골목의 소리 채집', '오늘의 로컬 한 컷', 'NPC의 비밀 장소', '작은 취향 발굴'][index] ?? '두리번 퀘스트';
-  const titleEn = ['Hidden Sign Hunter', 'Alley Sound Collector', 'One Local Shot', 'NPC Secret Spot', 'Tiny Taste Finder'][index] ?? 'Duribeon Quest';
+const patternLabelKo: Record<MissionPattern, string> = {
+  signboard: '간판 찾기',
+  menu: '메뉴 관찰',
+  object_hunt: '물건 찾기',
+  texture_photo: '질감 사진',
+  sound_note: '소리 기록',
+  mini_interview: '짧은 질문',
+  receipt: '영수증/티켓',
+  pose_photo: '포즈 사진',
+  compare_two: '두 가지 비교',
+  hidden_detail: '숨은 디테일',
+  taste_note: '맛 기록',
+  memory_note: '한 줄 기록',
+};
+
+const patternProofKo: Record<MissionPattern, string> = {
+  signboard: '장소 간판이나 문패가 보이게 사진 찍기',
+  menu: '메뉴판 또는 추천 메뉴 이름이 보이게 사진 찍기',
+  object_hunt: '장소의 대표 소품 하나를 찾아 사진 찍기',
+  texture_photo: '벽, 문, 창문, 바닥 중 하나의 질감이 잘 보이게 사진 찍기',
+  sound_note: '현장에서 들은 소리를 한 줄 캡션으로 적고 주변 사진 찍기',
+  mini_interview: '직원 또는 동행에게 추천 하나를 물어보고 단서가 보이게 사진 찍기',
+  receipt: '영수증, 티켓, 번호표, 포장지 중 하나가 보이게 사진 찍기',
+  pose_photo: '동행과 미션 장소를 배경으로 포즈 사진 찍기',
+  compare_two: '비슷한 것 두 개를 골라 나란히 사진 찍기',
+  hidden_detail: '그냥 지나치기 쉬운 작은 디테일을 클로즈업하기',
+  taste_note: '먹거나 마신 것의 맛을 캡션으로 남기고 사진 찍기',
+  memory_note: '이 장소를 기억할 한 문장을 캡션으로 남기고 사진 찍기',
+};
+
+const patternLabelEn: Record<MissionPattern, string> = {
+  signboard: 'Signboard Hunt',
+  menu: 'Menu Clue',
+  object_hunt: 'Object Hunt',
+  texture_photo: 'Texture Shot',
+  sound_note: 'Sound Note',
+  mini_interview: 'Tiny Interview',
+  receipt: 'Receipt Token',
+  pose_photo: 'Pose Photo',
+  compare_two: 'Compare Two',
+  hidden_detail: 'Hidden Detail',
+  taste_note: 'Taste Note',
+  memory_note: 'Memory Note',
+};
+
+function pickPattern(place: Place, usedPatterns: Set<MissionPattern>): MissionPattern {
+  return place.missionPatterns.find((pattern) => !usedPatterns.has(pattern)) ?? place.missionPatterns[0] ?? 'hidden_detail';
+}
+
+function placePayload(place: Place) {
+  return {
+    nameKo: place.nameKo,
+    nameEn: place.nameEn,
+    area: place.area,
+    address: place.address,
+    imageUrl: place.imageUrl,
+    imageUrls: place.imageUrls.length ? place.imageUrls : [place.imageUrl],
+    mapUrl: place.mapUrl,
+    tags: place.tags,
+    verificationHints: place.verificationHints,
+  };
+}
+
+function buildFallbackMission(place: Place, index: number, language: Language, usedPatterns = new Set<MissionPattern>()): Mission {
+  const pattern = pickPattern(place, usedPatterns);
+  usedPatterns.add(pattern);
+  const hint = place.verificationHints[index % place.verificationHints.length] ?? place.tags[0] ?? '장소 단서';
 
   return {
     id: randomUUID(),
     placeId: place.id,
-    title: language === 'ko' ? `${titleKo}: ${place.nameKo}` : `${titleEn}: ${place.nameEn}`,
+    title:
+      language === 'ko'
+        ? `${patternLabelKo[pattern]}: ${place.nameKo}`
+        : `${patternLabelEn[pattern]} at ${place.nameEn}`,
     hook:
       language === 'ko'
-        ? `${place.storyKo}. 그냥 지나치면 놓치는 디테일 하나를 찾아봐.`
-        : `${place.storyEn} Find one tiny detail most people would miss.`,
+        ? `${place.storyKo}. 오늘은 '${hint}' 단서를 잡아오는 퀘스트야.`
+        : `${place.storyEn} Your clue is '${hint}'. Bring it back like a quest item.`,
     route:
       language === 'ko'
-        ? `${place.nameKo} 주변을 10분 정도 천천히 둘러봐.`
-        : `Walk slowly around ${place.nameEn} for about 10 minutes.`,
-    proof:
-      language === 'ko'
-        ? '장소의 분위기와 미션 디테일이 함께 보이도록 사진 한 장 찍기'
-        : 'Take one photo showing both the place mood and your quest detail.',
-    duration: index % 2 === 0 ? '15분' : '20분',
+        ? `${place.nameKo} 근처를 천천히 한 바퀴 돌면서 ${hint} 단서를 찾아봐.`
+        : `Circle around ${place.nameEn} and look for the clue: ${hint}.`,
+    proof: language === 'ko' ? patternProofKo[pattern] : `Complete the ${patternLabelEn[pattern]} and upload one clear proof photo.`,
+    duration: `${10 + ((index * 5) % 25)}분`,
     category: place.category,
-    difficulty: index % 3 === 0 ? 'easy' : 'normal',
+    missionPattern: pattern,
+    difficulty: index % 5 === 4 ? 'hard' : index % 2 === 0 ? 'easy' : 'normal',
     npcLine:
       language === 'ko'
-        ? '자, 이건 골목 감지력이 필요한 퀘스트다. 눈 크게 뜨고 가자!'
-        : 'Alright, this quest needs alley-sense. Keep your eyes wide open!',
-    place: {
-      nameKo: place.nameKo,
-      nameEn: place.nameEn,
-      area: place.area,
-      address: place.address,
-      imageUrl: place.imageUrl,
-      mapUrl: place.mapUrl,
-      tags: place.tags,
-    },
+        ? `자, 이번 단서는 '${hint}'다. 그냥 보면 지나친다. 두리번거려!`
+        : `Your clue is '${hint}'. Don't just look — duribeon around!`,
+    place: placePayload(place),
   };
 }
 
-function attachPlace(raw: any, place: Place, language: 'ko' | 'en', index: number): Mission {
+function attachPlace(raw: any, place: Place, language: Language, index: number, usedPatterns: Set<MissionPattern>): Mission {
+  const requestedPattern = raw.missionPattern as MissionPattern | undefined;
+  const pattern = requestedPattern && place.missionPatterns.includes(requestedPattern) && !usedPatterns.has(requestedPattern)
+    ? requestedPattern
+    : pickPattern(place, usedPatterns);
+  usedPatterns.add(pattern);
+
+  const fallback = buildFallbackMission(place, index, language, usedPatterns);
   return MissionSchema.parse({
     id: raw.id || randomUUID(),
     placeId: place.id,
-    title: raw.title || (language === 'ko' ? `${place.nameKo} 퀘스트` : `${place.nameEn} Quest`),
-    hook: raw.hook || (language === 'ko' ? place.storyKo : place.storyEn),
-    route: raw.route || (language === 'ko' ? `${place.nameKo} 주변을 둘러보기` : `Explore around ${place.nameEn}`),
-    proof: raw.proof || (language === 'ko' ? '사진으로 인증하기' : 'Verify with a photo'),
-    duration: raw.duration || '15분',
+    title: raw.title || fallback.title,
+    hook: raw.hook || fallback.hook,
+    route: raw.route || fallback.route,
+    proof: raw.proof || fallback.proof,
+    duration: raw.duration || fallback.duration,
     category: place.category,
-    difficulty: raw.difficulty || 'normal',
-    npcLine: raw.npcLine || (language === 'ko' ? '가자, 용사여!' : 'Go, brave traveler!'),
-    place: {
-      nameKo: place.nameKo,
-      nameEn: place.nameEn,
-      area: place.area,
-      address: place.address,
-      imageUrl: place.imageUrl,
-      mapUrl: place.mapUrl,
-      tags: place.tags,
-    },
+    missionPattern: pattern,
+    difficulty: raw.difficulty || fallback.difficulty,
+    npcLine: raw.npcLine || fallback.npcLine,
+    place: placePayload(place),
   });
 }
 
@@ -73,13 +138,15 @@ function buildPrompt(params: {
   group: string;
   mood: string;
   avoid: string;
-  language: 'ko' | 'en';
+  language: Language;
   candidates: Place[];
   count: number;
+  usedPlaceIds?: string[];
+  usedPatterns?: MissionPattern[];
 }) {
   const responseLanguage = params.language === 'ko' ? 'Korean casual banmal' : 'casual English';
   return `
-You are a dot-pixel RPG NPC game master for Duribeon.
+You are Duribeon's dot-pixel RPG NPC game master.
 Create exactly ${params.count} travel mission cards.
 
 User context:
@@ -90,12 +157,20 @@ User context:
 - response language: ${responseLanguage}
 
 Hard rules:
-- Use ONLY the provided candidates.
+- Use ONLY candidate place ids.
 - Use each candidate at most once.
-- Do not invent real places, addresses, or facts.
+- Do not invent places, addresses, opening hours, famous facts, prices, or reservations.
 - Avoid risky, illegal, trespassing, harassment, or alcohol-focused missions for solo users.
-- Mission should be small, doable now, and photo-verifiable.
-- Keep NPC tone playful like a dot RPG quest giver.
+- Every mission must be small, doable now, and photo-verifiable.
+- Output JSON array only. No markdown. No explanation.
+
+Diversity rules:
+- Mix categories: food / discovery / activity.
+- Mission patterns must be different whenever possible.
+- Avoid already used place ids: ${JSON.stringify(params.usedPlaceIds ?? [])}
+- Avoid already used patterns: ${JSON.stringify(params.usedPatterns ?? [])}
+- Do not make all proofs simple "take a photo". Use specific clues from verificationHints.
+- Make each mission feel like a different mini-game: signboard, menu clue, texture, object hunt, sound note, tiny interview, receipt token, pose, comparison, hidden detail, taste note, or memory note.
 
 Candidates:
 ${JSON.stringify(
@@ -107,19 +182,21 @@ ${JSON.stringify(
     tags: p.tags,
     storyKo: p.storyKo,
     storyEn: p.storyEn,
+    verificationHints: p.verificationHints,
+    allowedMissionPatterns: p.missionPatterns,
   })),
   null,
   2,
 )}
 
-Return JSON array only. No markdown.
 Each item schema:
 {
   "placeId": "candidate id",
+  "missionPattern": "signboard|menu|object_hunt|texture_photo|sound_note|mini_interview|receipt|pose_photo|compare_two|hidden_detail|taste_note|memory_note",
   "title": "mission title",
   "hook": "one-line story hook",
   "route": "where/how to move",
-  "proof": "photo proof instruction",
+  "proof": "specific photo proof instruction",
   "duration": "10~30분",
   "difficulty": "easy|normal|hard",
   "npcLine": "one short NPC line"
@@ -127,18 +204,44 @@ Each item schema:
 `;
 }
 
+function selectUniqueMissions(rawItems: any[], candidates: Place[], language: Language, count: number, usedPatternSeed: MissionPattern[] = []) {
+  const usedPlaceIds = new Set<string>();
+  const usedPatterns = new Set<MissionPattern>(usedPatternSeed);
+  const missions: Mission[] = [];
+
+  for (const raw of rawItems) {
+    if (missions.length >= count) break;
+    const selected = candidates.find((p) => p.id === raw?.placeId && !usedPlaceIds.has(p.id));
+    if (!selected) continue;
+    usedPlaceIds.add(selected.id);
+    missions.push(attachPlace(raw, selected, language, missions.length, usedPatterns));
+  }
+
+  for (const place of candidates) {
+    if (missions.length >= count) break;
+    if (usedPlaceIds.has(place.id)) continue;
+    usedPlaceIds.add(place.id);
+    missions.push(buildFallbackMission(place, missions.length, language, usedPatterns));
+  }
+
+  return missions;
+}
+
 export async function generateMissions(input: unknown): Promise<Mission[]> {
   const parsed = GenerateMissionRequestSchema.parse(input);
   const candidates = pickPlaces({
     area: parsed.area,
+    mood: parsed.mood,
     avoid: parsed.avoid,
     excludePlaceIds: parsed.excludePlaceIds,
-    limit: 5,
+    excludeCategories: parsed.excludeCategories,
+    excludePatterns: parsed.excludePatterns,
+    limit: 18,
   });
 
   if (candidates.length < 5) {
     const fallbackCandidates = pickPlaces({ area: parsed.area, limit: 5 });
-    return MissionListSchema.parse(fallbackCandidates.map((p, i) => buildFallbackMission(p, i, parsed.language)));
+    return MissionListSchema.parse(selectUniqueMissions([], fallbackCandidates, parsed.language, 5));
   }
 
   try {
@@ -150,32 +253,36 @@ export async function generateMissions(input: unknown): Promise<Mission[]> {
       language: parsed.language,
       candidates,
       count: 5,
+      usedPlaceIds: parsed.excludePlaceIds,
+      usedPatterns: parsed.excludePatterns,
     });
     const content = await callUpstageChat(prompt);
     const arr = normalizeArray(extractJson(content)) as any[];
-    const used = new Set<string>();
-    const missions = arr.slice(0, 5).map((raw, index) => {
-      const selected = candidates.find((p) => p.id === raw.placeId && !used.has(p.id)) ?? candidates[index];
-      used.add(selected.id);
-      return attachPlace(raw, selected, parsed.language, index);
-    });
-    return MissionListSchema.parse(missions);
+    return MissionListSchema.parse(selectUniqueMissions(arr, candidates, parsed.language, 5, parsed.excludePatterns));
   } catch (error) {
     console.warn('[mission] Upstage fallback:', error);
-    return MissionListSchema.parse(candidates.map((p, i) => buildFallbackMission(p, i, parsed.language)));
+    return MissionListSchema.parse(selectUniqueMissions([], candidates, parsed.language, 5, parsed.excludePatterns));
   }
 }
 
 export async function regenerateOne(input: unknown): Promise<Mission> {
-  const parsed = (await import('../schemas.js')).RegenerateOneRequestSchema.parse(input);
+  const parsed = RegenerateOneRequestSchema.parse(input);
+  const target = parsed.currentMissions[parsed.replaceIndex];
+  const keep = parsed.currentMissions.filter((_, index) => index !== parsed.replaceIndex);
   const currentPlaceIds = parsed.currentMissions.map((m) => m.placeId);
+  const currentPatterns = parsed.currentMissions.map((m) => m.missionPattern).filter(Boolean) as MissionPattern[];
+  const currentCategories = parsed.currentMissions.map((m) => m.category).filter(Boolean) as any[];
+
   const candidates = pickPlaces({
     area: parsed.area,
+    mood: parsed.mood,
     avoid: parsed.avoid,
     excludePlaceIds: [...new Set([...currentPlaceIds, ...parsed.excludePlaceIds])],
-    limit: 1,
+    excludePatterns: [...new Set([...currentPatterns, ...parsed.excludePatterns])],
+    excludeCategories: [...new Set([...currentCategories, ...parsed.excludeCategories])],
+    limit: 8,
   });
-  const place = candidates[0] ?? pickPlaces({ area: parsed.area, limit: 1 })[0];
+  const place = candidates[0] ?? pickPlaces({ area: parsed.area, excludePlaceIds: keep.map((m) => m.placeId), limit: 1 })[0];
 
   try {
     const prompt = buildPrompt({
@@ -184,14 +291,16 @@ export async function regenerateOne(input: unknown): Promise<Mission> {
       mood: parsed.mood,
       avoid: parsed.avoid,
       language: parsed.language,
-      candidates: [place],
+      candidates: candidates.length ? candidates : [place],
       count: 1,
+      usedPlaceIds: currentPlaceIds,
+      usedPatterns: currentPatterns,
     });
     const content = await callUpstageChat(prompt);
     const arr = normalizeArray(extractJson(content)) as any[];
-    return attachPlace(arr[0] ?? {}, place, parsed.language, 0);
+    return selectUniqueMissions(arr, candidates.length ? candidates : [place], parsed.language, 1, currentPatterns)[0];
   } catch (error) {
     console.warn('[mission-one] Upstage fallback:', error);
-    return buildFallbackMission(place, 0, parsed.language);
+    return buildFallbackMission(place, parsed.replaceIndex, parsed.language, new Set(currentPatterns));
   }
 }

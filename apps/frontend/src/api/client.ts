@@ -1,4 +1,4 @@
-import type { Mission, QuestContext, VerifyResult } from '../types';
+import type { Mission, MissionCategory, MissionPattern, QuestContext, VerifyResult } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8080';
 
@@ -10,11 +10,16 @@ async function parseJson<T>(response: Response): Promise<T> {
   return json as T;
 }
 
-export async function generateMissions(context: QuestContext, excludePlaceIds: string[] = []) {
+export async function generateMissions(
+  context: QuestContext,
+  excludePlaceIds: string[] = [],
+  excludePatterns: MissionPattern[] = [],
+  excludeCategories: MissionCategory[] = [],
+) {
   const res = await fetch(`${API_BASE_URL}/api/missions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...context, excludePlaceIds }),
+    body: JSON.stringify({ ...context, excludePlaceIds, excludePatterns, excludeCategories }),
   });
   return parseJson<{ missions: Mission[] }>(res);
 }
@@ -29,7 +34,7 @@ export async function regenerateOneMission(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       ...params.context,
-      currentMissions: params.currentMissions.map((m) => ({ placeId: m.placeId })),
+      currentMissions: params.currentMissions.map((m) => ({ placeId: m.placeId, category: m.category, missionPattern: m.missionPattern })),
       replaceIndex: params.replaceIndex,
     }),
   });

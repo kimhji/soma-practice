@@ -1,5 +1,19 @@
 export type Area = 'ikseon' | 'seongsu' | 'yeonnam';
 export type Language = 'ko' | 'en';
+export type MissionCategory = 'food' | 'discovery' | 'activity';
+export type MissionPattern =
+  | 'signboard'
+  | 'menu'
+  | 'object_hunt'
+  | 'texture_photo'
+  | 'sound_note'
+  | 'mini_interview'
+  | 'receipt'
+  | 'pose_photo'
+  | 'compare_two'
+  | 'hidden_detail'
+  | 'taste_note'
+  | 'memory_note';
 
 export type Mission = {
   id: string;
@@ -9,7 +23,8 @@ export type Mission = {
   route: string;
   proof: string;
   duration: string;
-  category: string;
+  category: MissionCategory;
+  missionPattern: MissionPattern;
   difficulty: 'easy' | 'normal' | 'hard';
   npcLine: string;
   place: {
@@ -18,8 +33,10 @@ export type Mission = {
     area: Area;
     address: string;
     imageUrl: string;
+    imageUrls: string[];
     mapUrl: string;
     tags: string[];
+    verificationHints: string[];
   };
 };
 

@@ -30,10 +30,12 @@ export function HomePage() {
     setMessage('지도 조각을 섞는 중... 실제 장소 5곳을 뽑고 있어!');
     try {
       const exclude = missions.map((m) => m.placeId);
-      const data = await generateMissions(context, exclude);
+      const excludePatterns = missions.map((m) => m.missionPattern);
+      const excludeCategories = missions.map((m) => m.category);
+      const data = await generateMissions(context, exclude, excludePatterns, excludeCategories);
       setMissions(data.missions);
       saveContext(context);
-      setMessage('퀘스트 5개를 찾았다! 마음에 안 들면 전체나 일부만 다시 뽑아도 돼.');
+      setMessage('퀘스트 5개를 찾았다! 장소와 미션 방식이 최대한 겹치지 않게 섞어뒀어.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '미션 생성 실패');
     } finally {
